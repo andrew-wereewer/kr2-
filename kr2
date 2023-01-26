@@ -1,0 +1,254 @@
+from random import randint
+
+class Dot:
+    def __init__(pole, x, y):
+        pole.x = x
+        pole.y = y
+    
+    def __eq__(pole, other):
+        return pole.x == other.x and pole.y == other.y
+    
+    def __repr__(pole):
+        return f"({pole.x}, {pole.y})"
+
+
+class PoleIskl(Exception):
+    pass
+
+class ZaPole(PoleIskl):
+    def __str__(pole):
+        return "Выстрел за доску"
+
+class Povtor(PoleIskl):
+    def __str__(pole):
+        return "Выстрел в заполненную клетку"
+
+class KorablIskl(PoleIskl):
+    pass
+
+class Ship:
+    def __init__(pole, bow, l, o):
+        pole.bow = bow
+        pole.l = l
+        pole.o = o
+        pole.lives = l
+    
+    @property
+    def dots(pole):
+        ship_dots = []
+        for i in range(pole.l):
+            cur_x = pole.bow.x 
+            cur_y = pole.bow.y
+            
+            if pole.o == 0:
+                cur_x += i
+            
+            elif pole.o == 1:
+                cur_y += i
+            
+            ship_dots.append(Dot(cur_x, cur_y))
+        
+        return ship_dots
+    
+    def shooten(pole, shot):
+        return shot in pole.dots
+
+class Board:
+    def __init__(pole, hid = False, size = 6):
+        pole.size = size
+        pole.hid = hid
+        
+        pole.count = 0
+        
+        pole.field = [ ["O"]*size for _ in range(size) ]
+        
+        pole.busy = []
+        pole.korabli = []
+    
+    def add_Korabl(pole, Korabl):
+        
+        for d in Korabl.dots:
+            if pole.out(d) or d in pole.busy:
+                raise KorablIskl()
+        for d in Korabl.dots:
+            pole.field[d.x][d.y] = "■"
+            pole.busy.append(d)
+        
+        pole.korabli.append(Korabl)
+        pole.contour(Korabl)
+            
+    def contour(pole, Korabl, verb = False):
+        near = [
+            (-1, -1), (-1, 0) , (-1, 1),
+            (0, -1), (0, 0) , (0 , 1),
+            (1, -1), (1, 0) , (1, 1)
+        ]
+        for d in Korabl.dots:
+            for dx, dy in near:
+                cur = Dot(d.x + dx, d.y + dy)
+                if not(pole.out(cur)) and cur not in pole.busy:
+                    if verb:
+                        pole.field[cur.x][cur.y] = "."
+                    pole.busy.append(cur)
+    
+    def __str__(pole):
+        res = ""
+        res += "  | 1 | 2 | 3 | 4 | 5 | 6 |"
+        for i, row in enumerate(pole.field):
+            res += f"\n{i+1} | " + " | ".join(row) + " |"
+        
+        if pole.hid:
+            res = res.replace("■", "O")
+        return res
+    
+    def out(pole, d):
+        return not((0<= d.x < pole.size) and (0<= d.y < pole.size))
+
+    def shot(pole, d):
+        if pole.out(d):
+            raise ZaPole()
+        
+        if d in pole.busy:
+            raise Povtor()
+        
+        pole.busy.append(d)
+        
+        for Korabl in pole.korabli:
+            if d in Korabl.dots:
+                Korabl.lives -= 1
+                pole.field[d.x][d.y] = "X"
+                if Korabl.lives == 0:
+                    pole.count += 1
+                    pole.contour(Korabl, verb = True)
+                    print("Корабль уничтожен!")
+                    return False
+                else:
+                    print("Корабль ранен!")
+                    return True
+        
+        pole.field[d.x][d.y] = "."
+        print("Мимо!")
+        return False
+    
+    def begin(pole):
+        pole.busy = []
+
+class Player:
+    def __init__(pole, doska, enemy):
+        pole.doska = doska
+        pole.enemy = enemy
+    
+    def ask(pole):
+        raise NotImplementedError()
+    
+    def move(pole):
+        while True:
+            try:
+                target = pole.ask()
+                repeat = pole.enemy.shot(target)
+                return repeat
+            except PoleIskl as e:
+                print(e)
+
+class AI(Player):
+    def ask(self):
+        d = Dot(randint(0,5), randint(0, 5))
+        print("Ход компьютера: {d.x+1} {d.y+1}")
+        return d
+
+class User(Player):
+    def ask(self):
+        while True:
+            cords = input("Ваш ход: ").split()
+            
+            if len(cords) != 2:
+                print(" Введите 2 координаты")
+                continue
+            
+            x, y = cords
+            
+            if not(x.isdigit()) or not(y.isdigit()):
+                print(" Введите числа")
+                continue
+            
+            x, y = int(x), int(y)
+            
+            return Dot(x-1, y-1)
+
+class Game:
+    def __init__(pole, size = 6):
+        pole.size = size
+        pl = pole.ran_pole()
+        co = pole.ran_pole()
+        co.hid = True
+        
+        pole.ai = AI(co, pl)
+        pole.us = User(pl, co)
+    
+    def ran_pole(pole):
+        doska = None
+        while doska is None:
+            doska = pole.random_place()
+        return doska
+    
+    def random_place(pole):
+        lens = [3, 2, 2, 1, 1, 1, 1]
+        doska = Board(size = pole.size)
+        attempts = 0
+        for l in lens:
+            while True:
+                attempts += 1
+                if attempts > 2000:
+                    return None
+                Korabl = Ship(Dot(randint(0, pole.size), randint(0, pole.size)), l, randint(0,1))
+                try:
+                    doska.add_Korabl(Korabl)
+                    break
+                except KorablIskl:
+                    pass
+        doska.begin()
+        return doska
+
+    def greet(pole):
+        print(" x - номер строки  ")
+        print(" y - номер столбца ")
+    
+    
+    def loop(pole):
+        num = 0
+        while True:
+            print("-"*20)
+            print("Доска игрока:")
+            print(pole.us.doska)
+            print("-"*20)
+            print("Доска компьютера:")
+            print(pole.ai.doska)
+            if num % 2 == 0:
+                print("-"*20)
+                print("Ходит игрок")
+                repeat = pole.us.move()
+            else:
+                print("-"*20)
+                print("Ходит компьютер!")
+                repeat = pole.ai.move()
+            if repeat:
+                num -= 1
+            
+            if pole.ai.doska.count == 7:
+                print("-"*20)
+                print("Игрок выиграл!")
+                break
+            
+            if pole.us.doska.count == 7:
+                print("-"*20)
+                print("Компьютер выиграл!")
+                break
+            num += 1
+            
+    def start(pole):
+        pole.greet()
+        pole.loop()
+            
+            
+g = Game()
+g.start()
